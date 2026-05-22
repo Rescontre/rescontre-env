@@ -72,6 +72,54 @@ uv run rescontre-eval --llm --model gpt-4o-mini \
   --base-url https://api.openai.com/v1 --api-key "$OPENAI_API_KEY"
 ```
 
+## Results: the env discriminates by capability
+
+Two Qwen2.5 models, zero-shot, same env (6 counterparties, horizon 12), paired
+seeds. Reward is negative cost; higher is better.
+
+| Model | Reward | Fee (settling) | Default (losses) | Behavior |
+|---|---:|---:|---:|---|
+| Qwen2.5-**1.5B** | −7347 | 245 | 7102 | passive — barely collects, bleeds to default |
+| Qwen2.5-**7B** | −3642 | 1653 | 1988 | active — learned to collect and settle |
+| `greedy` (4-line heuristic) | −2242 | 916 | 1326 | still beats both models |
+| `oracle` (sees hidden types) | −2521 | 1323 | 1198 | latent-peeking reference |
+
+The bigger model jumps from "do nothing and bleed out" to "actively manage": the
+fee/default profile flips exactly the way a more capable agent's should. The env
+separates models by capability — and it is **not saturated**: even 7B loses to a
+4-line heuristic, so there is real headroom above current open models. Both
+models emitted valid actions 100% of the time (0% parse failure).
+
+> Caveat: these are small samples (4–8 episodes), so the numbers are directional,
+> not publishable. The robust signals are the large 1.5B → 7B jump and the fact
+> that 7B has not yet caught the heuristic. Tight error bars need ~100+ episodes.
+
+## The long-horizon signal
+
+The central claim is that this is a *long-horizon-agency* testbed: the longer the
+horizon, the more inferring the hidden state matters. That shows up in the
+environment's own structure — the value of information (how much the
+latent-peeking `oracle` beats the best history-only heuristic `greedy`) grows
+with the horizon:
+
+| Horizon | Oracle's edge over greedy |
+|---:|---:|
+| 12 | ~0%  (knowing the types buys nothing yet) |
+| 24 | ~5%  |
+| 48 | ~19% (knowing the types is now a large advantage) |
+
+This is a property of the env, independent of any model: at short horizons there
+is little to infer, but over long horizons the hidden counterparty types and the
+drifting regime compound, and an agent that can track them pulls away. Reproduce
+it with `DynamicsConfig(horizon=h)` and the snippet below, or run the LLM version
+with `scripts/horizon_sweep_llm.py`.
+
+Preliminary LLM sweep (Qwen2.5-7B, gap below the `oracle` ceiling, 10 episodes):
+horizon 12 → 43%, 24 → 41%, 48 → 56%. The model trails the ceiling throughout
+and most at the longest horizon, with its first parse failures appearing only at
+horizon 48. Suggestive of long-horizon strain, underpowered at n=10 — a real
+measurement needs ~100+ episodes and more model sizes.
+
 ## The environment
 
 `SettlementTiming-v0`. Each cycle, for every counterparty, the agent chooses
